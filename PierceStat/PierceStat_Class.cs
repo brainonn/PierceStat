@@ -45,6 +45,11 @@ namespace PierceStat
 
         private RsExchange _comPort;
 
+        public void SetErrorHandler(ErrorHandler handler)
+        {
+            _comPort.RsMessage += handler;
+        }
+
         private static readonly string _getID = "*IDN?";
         private static readonly string _IDanswer = "PierceStat";
 
@@ -312,7 +317,7 @@ namespace PierceStat
             this.Number = number;
             this._value = value;
             this.ReadOnly = readOnly;
-            this.CommandGet = $"${this.Number}?";
+            this.CommandGet = $"${this.Number}?;";
             this.CommandSet = $"${this.Number}:";
         }
 
