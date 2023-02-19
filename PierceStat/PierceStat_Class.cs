@@ -318,7 +318,7 @@ namespace PierceStat
             this._value = value;
             this.ReadOnly = readOnly;
             this.CommandGet = $"${this.Number}?;";
-            this.CommandSet = $"${this.Number}:";
+            this.CommandSet = $"${this.Number}:{{0}};";
         }
 
         public T Value
@@ -328,7 +328,7 @@ namespace PierceStat
             set
             {
                 _value = value;
-                _instance.WriteRs(CommandSet + GetInString());
+                _instance.WriteRs(String.Format(CommandSet, _value));
                 string reply = _instance.ReadRs();
                 //Console.WriteLine(reply);
                 
