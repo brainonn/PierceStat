@@ -21,7 +21,7 @@ namespace PierceStat
             form_Settings = new Form_Settings();
 
             pierceStat = new PierceStat_Class();
-            pierceStat.SetErrorHandler(new ErrorHandler(AddMessage));
+            //pierceStat._comPort.RsMessage += new ErrorHandler(AddMessage);
 
 
             numericUpDown_U_HeaterMeas.Controls[0].Enabled = false;
@@ -105,7 +105,7 @@ namespace PierceStat
             StringBuilder command = new StringBuilder();
             foreach(var param in parametersToPull) 
             { 
-                command.Append(param.CommandGet);
+                command.Append(param.CommandGet); 
             }
             pierceStat.WriteRs(command.ToString());
             command.Clear();
