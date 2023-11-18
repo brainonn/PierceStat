@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.ComponentModel.Design.Serialization;
 using System.Globalization;
 using System.Linq;
+using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
@@ -16,11 +17,11 @@ namespace PierceStat
 {
     public class PierceStat_Class
     {
-        public PierceStat_Class()
+        public PierceStat_Class(MessageHandler messageHandler)
         {
-            _comPort = new RsExchange();
-            _initParams();       
-
+            _comPort = new RsExchange(messageHandler);
+            _messageHandler = messageHandler;
+            _initParams();
         }
 
         public bool Connect(string port)
@@ -30,6 +31,7 @@ namespace PierceStat
 
         public bool Disconnect()
         {
+
             return _comPort.DisRs();
         }
 
@@ -43,7 +45,15 @@ namespace PierceStat
             return _comPort.ReadRs();
         }
 
+        public void AddMessage(object source, MessageArgs e)
+        {
+            _messageHandler(source, e);
+        }
+
+
         private RsExchange _comPort;
+        public delegate void MessageHandler(object source, MessageArgs e);
+        public event MessageHandler _messageHandler;
 
         private static readonly string _getID = "*IDN?";
         private static readonly string _IDanswer = "PierceStat";
@@ -83,9 +93,19 @@ namespace PierceStat
         public List<ParameterBool> Polarity;
         public ParameterDecimal FreqMeas;
         public ParameterDecimal FreqSet;
+        public ParameterDecimal FreqMin;
+        public ParameterDecimal FreqMax;
+
+        //Alarms
+        public ParameterInt Alarms;
+        public ParameterInt AlarmMasks;
+
+        public Command SaveFlash;
 
         private void _initParams()
         {
+            SaveFlash = new Command(this, "Save Flash", 110);
+
             //Heater Voltage
             U_HeaterSet =       new ParameterDecimal(this,  "Heater Set Voltage",               150,    12.0m,      false);
             U_HeaterMeas =      new ParameterDecimal(this,  "Heater Measured Voltage",          202,    0.0m,       true);
@@ -234,14 +254,14 @@ namespace PierceStat
                                 new ParameterBool(this,     "Channel 1 Polarity",               411,    true,       false),
                                 new ParameterBool(this,     "Channel 2 Polarity",               412,    true,       false)
             };
-            FreqMeas =          new ParameterDecimal(this,  "Pierce frequency",                 500,    0.0m,       false);
+            FreqMeas =          new ParameterDecimal(this,  "Pierce frequency",                 500,    0.0m,       true);
             FreqSet =           new ParameterDecimal(this,  "Set Pierce frequency",             501,    0.0m,       false);
+            FreqMin =           new ParameterDecimal(this,  "Min frequency",                    502,    0.0m,       false);
+            FreqMax =           new ParameterDecimal(this,  "Max frequency",                    503,    0.0m,       false);
 
-         
-            //Alarms
-            //parametersTable["Alarms", new Parameter<int>("Alarms vector", 700, 0, true);
-            //parametersTable["Alarms Masks", new Parameter<int>("Alarm masks vector", 800, 0, false);
 
+            Alarms = new ParameterInt(this,                 "Alarm Vector",                     700,    0b0,        false);
+            AlarmMasks = new ParameterInt(this,             "Alarm Masks Vector",               800,    0b0,        false);
         }
     }
     
@@ -260,7 +280,6 @@ namespace PierceStat
         string GetInString();
     }
     
-    //Why IComparable?
     public interface IParameter<T> : IParameter where T : IComparable
     {
         T Value { get; set; }
@@ -304,6 +323,8 @@ namespace PierceStat
         public string CommandSet { get; }
         public bool ReadOnly { get; }
 
+        public delegate void MessageHandler(object source, MessageArgs e);
+
         protected T _value;
         
         public Parameter(PierceStat_Class instance, string description, int number, T value, bool readOnly = false)
@@ -313,7 +334,7 @@ namespace PierceStat
             this.Number = number;
             this._value = value;
             this.ReadOnly = readOnly;
-            this.CommandGet = $"${this.Number}?";
+            this.CommandGet = $"${this.Number}?;";
             this.CommandSet = $"${this.Number}:";
         }
 
@@ -326,8 +347,8 @@ namespace PierceStat
                 _value = value;
                 _instance.WriteRs(CommandSet + GetInString());
                 string reply = _instance.ReadRs();
-                //Console.WriteLine(reply);
-                
+                if (reply.Length < 5 || reply[5] == 'N')
+                    _instance.AddMessage(this, new MessageArgs($"Parameter Value Set()", $"{this.Number}: Incorrect value"));
             }
         }
 
@@ -338,14 +359,14 @@ namespace PierceStat
                 reply = reply.Substring(5);
             else
             {
+                _instance.AddMessage(this, new MessageArgs($"ReadFromCom()", $"Too short reply {this.Number}: " + reply));
                 reply = null;
-                Console.WriteLine("Reply is too short");
                 return _value;
             }
                 
             if (!SetFromString(reply))
             {
-                Console.WriteLine("Can't parse: " + reply);
+                _instance.AddMessage(this, new MessageArgs($"ReadFromCom()", $"Can't parse {this.Number}: " + reply));
             }
             return _value;
         }
@@ -360,7 +381,10 @@ namespace PierceStat
 
         public string GetInString()
         {
-            return _value.ToString();
+            string str = _value.ToString();
+            if (typeof(T) == typeof(bool))
+                str = (str == "False") ? "false" : "true";
+            return str;
         }
 
     }
@@ -419,5 +443,40 @@ namespace PierceStat
             return false;
         }
 
+    }
+    public class MessageArgs : EventArgs
+    {
+        public string MessageTime
+        {
+            get
+            {
+                return _messageTime;
+            }
+        }
+        public string MessageSource
+        {
+            get
+            {
+                return _messageSource;
+            }
+
+        }
+        public string MessageInfo
+        {
+            get
+            {
+                return _messageInfo;
+            }
+        }
+        public MessageArgs(string messageSource, string messageInfo)
+        {
+            _messageSource = messageSource;
+            _messageInfo = messageInfo;
+            _messageTime = $"{DateTime.Now.ToString("hh:mm:ss")}";
+        }
+
+        private string _messageTime;
+        private string _messageSource;
+        private string _messageInfo;
     }
 }
